@@ -27,12 +27,24 @@ if not os.path.exists(state_file):
         json.dump({"downloads": []}, f)
 
 def save_state():
+    # Ensure 'downloads' is always a list when saving state
+    state = load_state()
+    if not isinstance(state.get("downloads"), list):
+        state["downloads"] = []  # Reset to an empty list if it's not already a list
     with open(state_file, "w") as f:
-        json.dump({"downloads": list(user_modes.values())}, f)  # Store values as a list
+        json.dump(state, f)
 
 def load_state():
-    with open(state_file, "r") as f:
-        return json.load(f)
+    if os.path.exists(state_file):
+        with open(state_file, "r") as f:
+            state = json.load(f)
+            # Ensure 'downloads' is a list
+            if not isinstance(state.get("downloads"), list):
+                state["downloads"] = []  # Initialize as a list if it's not one
+            return state
+    else:
+        return {"downloads": []}  # Default state
+
 
 @app.on_message(filters.command("mode") & filters.private)
 async def mode_selector(client: Client, message: Message):
@@ -48,7 +60,6 @@ async def mode_callback(client, callback_query):
     user_id = callback_query.from_user.id
     mode = callback_query.data.split("_")[1]
     user_modes[user_id] = mode
-    save_state()  # Save the mode change
     await callback_query.answer(f"Mode set to: {mode.capitalize()}", show_alert=True)
 
 @app.on_message(filters.private & filters.document)
@@ -76,6 +87,7 @@ async def handle_zip(client: Client, message: Message):
         if percent != current_percent:
             current_percent = percent
             try:
+                await asyncio.sleep(5)  # Delay of 5 seconds before editing the message
                 await status_message.edit_text(f"Downloading...\n{percent}% completed")
             except Exception as e:
                 print(f"Progress update error: {e}")
