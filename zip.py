@@ -84,10 +84,10 @@ async def handle_zip(client: Client, message: Message):
     async def sync_progress(current, total):
         nonlocal current_percent
         percent = int((current / total) * 100)
+        # Update if the percentage has changed
         if percent != current_percent:
             current_percent = percent
             try:
-                await asyncio.sleep(5)  # Delay of 5 seconds before editing the message
                 await status_message.edit_text(f"Downloading...\n{percent}% completed")
             except Exception as e:
                 print(f"Progress update error: {e}")
