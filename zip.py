@@ -46,7 +46,8 @@ async def handle_zip(client: Client, message: Message):
 
     mode = user_modes.get(message.from_user.id, "both")
 
-    status = await message.reply_text("Downloading... 0%")
+    status_message = await message.reply_text("Downloading... 0%")  # Status message for progress
+
     zip_path = f"downloads/{message.document.file_id}.zip"
     os.makedirs("downloads", exist_ok=True)
 
@@ -60,18 +61,18 @@ async def handle_zip(client: Client, message: Message):
             current_percent = percent
             try:
                 asyncio.run_coroutine_threadsafe(
-                    status.edit_text(f"Downloading...\n{percent}% completed"),
+                    status_message.edit_text(f"Downloading...\n{percent}% completed"),
                     app.loop
                 )
-            except:
-                pass
+            except Exception as e:
+                print(f"Error during progress update: {e}")
 
     await message.download(
         file_name=zip_path,
         progress=sync_progress
     )
 
-    await status.edit_text("Download complete. Unzipping...")
+    await status_message.edit_text("Download complete. Unzipping...")
 
     extract_path = f"extracted/{message.document.file_id}"
     os.makedirs(extract_path, exist_ok=True)
@@ -80,15 +81,15 @@ async def handle_zip(client: Client, message: Message):
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(extract_path)
     except zipfile.BadZipFile:
-        await status.edit_text("Invalid ZIP archive.")
+        await status_message.edit_text("Invalid ZIP archive.")
         os.remove(zip_path)
         return
 
-    await status.edit_text("Unzipped. Starting upload...")
+    await status_message.edit_text("Unzipped. Starting upload...")
 
     file_paths = list(Path(extract_path).rglob("*.*"))
     if not file_paths:
-        await status.edit_text("No files found in ZIP.")
+        await status_message.edit_text("No files found in ZIP.")
         return
 
     for i, file in enumerate(file_paths, 1):
@@ -99,26 +100,20 @@ async def handle_zip(client: Client, message: Message):
             elif mode == "ch1":
                 await app.send_document(chat_id=channel1_id, document=file_path)
             elif mode == "both":
-                # Send to channel 1
-                sent = await app.send_document(chat_id=channel1_id, document=file_path)
-                # Copy to channel 2 without forward tag
-                await app.copy_message(
-                    chat_id=channel2_id,
-                    from_chat_id=channel1_id,
-                    message_id=sent.message_id
-                )
+                await app.send_document(chat_id=channel1_id, document=file_path)
+                await app.send_document(chat_id=channel2_id, document=file_path)
         except FloodWait as e:
             await asyncio.sleep(e.value)
 
-        await status.edit_text(f"Uploaded {i}/{len(file_paths)} files...")
+        await status_message.edit_text(f"Uploaded {i}/{len(file_paths)} files...")
 
     total_time = time.time() - start_time
-    await status.edit_text(f"Upload complete in {total_time:.2f}s.\nDeleting ZIP from VPS...")
+    await status_message.edit_text(f"Upload complete in {total_time:.2f}s.\nDeleting ZIP from VPS...")
 
     os.remove(zip_path)
     shutil.rmtree(extract_path)
 
-    await status.edit_text("All done! ZIP file deleted from VPS.")
+    await status_message.edit_text("All done! ZIP file deleted from VPS.")
 
 
 app.run()
