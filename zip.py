@@ -99,8 +99,14 @@ async def handle_zip(client: Client, message: Message):
             elif mode == "ch1":
                 await app.send_document(chat_id=channel1_id, document=file_path)
             elif mode == "both":
-                await app.send_document(chat_id=channel1_id, document=file_path)
-                await app.send_document(chat_id=channel2_id, document=file_path)
+                # Send to channel 1
+                sent = await app.send_document(chat_id=channel1_id, document=file_path)
+                # Copy to channel 2 without forward tag
+                await app.copy_message(
+                    chat_id=channel2_id,
+                    from_chat_id=channel1_id,
+                    message_id=sent.message_id
+                )
         except FloodWait as e:
             await asyncio.sleep(e.value)
 
