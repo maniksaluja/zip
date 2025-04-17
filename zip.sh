@@ -32,4 +32,4 @@ if [ ! -f bot_state.json ]; then
 fi
 
 echo "Setup complete!"
-echo "To start the bot, run: source zipbot_env/bin/activate && python3 your_bot_script.py"
+echo "To start the bot, run: source zipbot_env/bin/activate && python3 zip.py"
