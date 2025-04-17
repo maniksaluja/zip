@@ -28,7 +28,7 @@ if not os.path.exists(state_file):
 
 def save_state():
     with open(state_file, "w") as f:
-        json.dump({"downloads": user_modes}, f)
+        json.dump({"downloads": list(user_modes.values())}, f)  # Store values as a list
 
 def load_state():
     with open(state_file, "r") as f:
@@ -48,6 +48,7 @@ async def mode_callback(client, callback_query):
     user_id = callback_query.from_user.id
     mode = callback_query.data.split("_")[1]
     user_modes[user_id] = mode
+    save_state()  # Save the mode change
     await callback_query.answer(f"Mode set to: {mode.capitalize()}", show_alert=True)
 
 @app.on_message(filters.private & filters.document)
@@ -85,7 +86,7 @@ async def handle_zip(client: Client, message: Message):
         progress=sync_progress
     )
 
-    state["downloads"].append(message.document.file_id)
+    state["downloads"].append(message.document.file_id)  # Correctly append the file_id to list
     save_state()
 
     await status_message.edit_text("Download complete. Unzipping...")
