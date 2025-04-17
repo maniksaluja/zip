@@ -7,7 +7,7 @@ import asyncio
 import subprocess
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from pyrogram.errors import FloodWait
+from pyrogram.errors import FloodWait, ChannelPrivate
 from pathlib import Path
 from PIL import Image
 
@@ -15,8 +15,8 @@ API_ID = 20886865
 API_HASH = "754d23c04f9244762390c095d5d8fe2b"
 BOT_TOKEN = "8108094028:AAHE8BfBW1KvOLb-zQmBe_pj2c_KgZrRWvo"
 
-channel1_id = -1002692719794
-channel2_id = -1002638090230
+channel1_id = None  # Optional, can be None
+channel2_id = None  # Optional, can be None
 
 user_modes = {}
 app = Client("zip_upload_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
@@ -74,10 +74,7 @@ async def handle_zip(client: Client, message: Message):
         if percent != current_percent:
             current_percent = percent
             try:
-                asyncio.run_coroutine_threadsafe(
-                    status_message.edit_text(f"Downloading...\n{percent}% completed"),
-                    app.loop
-                )
+                await status_message.edit_text(f"Downloading...\n{percent}% completed")
             except Exception as e:
                 print(f"Progress update error: {e}")
 
@@ -111,6 +108,25 @@ async def handle_zip(client: Client, message: Message):
         shutil.rmtree(extract_path)
         return
 
+    # Check if channels are provided and if accessible
+    if channel1_id:
+        try:
+            await app.get_chat(channel1_id)
+            print("Channel 1 is accessible")
+        except Exception as e:
+            print(f"Error accessing channel 1: {e}")
+            await status_message.edit_text(f"Channel 1 is not accessible.")
+            return
+
+    if channel2_id:
+        try:
+            await app.get_chat(channel2_id)
+            print("Channel 2 is accessible")
+        except Exception as e:
+            print(f"Error accessing channel 2: {e}")
+            await status_message.edit_text(f"Channel 2 is not accessible.")
+            return
+
     for i, file in enumerate(file_paths, 1):
         file_path = str(file)
 
@@ -141,22 +157,26 @@ async def handle_zip(client: Client, message: Message):
             if file_path.lower().endswith(('.mp4', '.avi', '.mov', '.flv', '.mkv', '.webm')):
                 if mode == "direct":
                     await client.send_video(message.from_user.id, video=file_path)
-                elif mode == "ch1":
+                elif mode == "ch1" and channel1_id:
                     await app.send_video(chat_id=channel1_id, video=file_path)
-                elif mode == "both":
+                elif mode == "both" and channel1_id and channel2_id:
                     await app.send_video(chat_id=channel1_id, video=file_path)
                     await app.send_video(chat_id=channel2_id, video=file_path)
             elif file_path.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')):
                 if mode == "direct":
                     await client.send_photo(message.from_user.id, photo=file_path)
-                elif mode == "ch1":
+                elif mode == "ch1" and channel1_id:
                     await app.send_photo(chat_id=channel1_id, photo=file_path)
-                elif mode == "both":
+                elif mode == "both" and channel1_id and channel2_id:
                     await app.send_photo(chat_id=channel1_id, photo=file_path)
                     await app.send_photo(chat_id=channel2_id, photo=file_path)
 
         except FloodWait as e:
             await asyncio.sleep(e.value)
+
+        except ChannelPrivate as e:
+            await status_message.edit_text(f"Channel access error: {e}")
+            continue
 
         await status_message.edit_text(f"Uploaded {i}/{len(file_paths)} files...")
 
