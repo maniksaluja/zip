@@ -2,21 +2,24 @@ import os
 import time
 import zipfile
 import shutil
+import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from pyrogram.errors import FloodWait
 from pathlib import Path
 
-API_ID = 123456   # apna API ID
-API_HASH = "your_api_hash"
-BOT_TOKEN = "your_bot_token"
-CHANNELS = ["channel1username", "channel2username"]  # @ ke bina
+API_ID = 20886865  # apna API ID
+API_HASH = "754d23c04f9244762390c095d5d8fe2b""
+BOT_TOKEN = "8108094028:AAHE8BfBW1KvOLb-zQmBe_pj2c_KgZrRWvo"
+
+# Username ke jagah channel IDs
+CHANNELS = [-1002692719794, -1002638090230]  # yahan apne channel IDs daalein
 
 app = Client("zip_upload_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 def progress(current, total, message, action):
     percent = (current / total) * 100
-    message.edit_text(f"{action}...\n{percent:.2f}% completed")
+    asyncio.create_task(message.edit_text(f"{action}...\n{percent:.2f}% completed"))
 
 @app.on_message(filters.private & filters.document)
 async def handle_zip(client: Client, message: Message):
@@ -36,7 +39,7 @@ async def handle_zip(client: Client, message: Message):
         progress_args=()
     )
 
-    status.edit_text("Download complete. Unzipping...")
+    await status.edit_text("Download complete. Unzipping...")
 
     extract_path = f"extracted/{message.document.file_id}"
     os.makedirs(extract_path, exist_ok=True)
@@ -45,7 +48,7 @@ async def handle_zip(client: Client, message: Message):
         zip_ref.extractall(extract_path)
 
     unzip_time = time.time() - start_time
-    status.edit_text(f"Unzip complete in {unzip_time:.2f}s. Uploading...")
+    await status.edit_text(f"Unzip complete in {unzip_time:.2f}s. Uploading...")
 
     file_paths = list(Path(extract_path).rglob("*.*"))
     total_files = len(file_paths)
@@ -54,9 +57,9 @@ async def handle_zip(client: Client, message: Message):
         return await status.edit_text("No files found inside ZIP.")
 
     for i, file in enumerate(file_paths, 1):
-        for channel in CHANNELS:
+        for channel_id in CHANNELS:
             try:
-                await app.send_document(chat_id=channel, document=str(file))
+                await app.send_document(chat_id=channel_id, document=str(file))
             except FloodWait as e:
                 await asyncio.sleep(e.value)
 
