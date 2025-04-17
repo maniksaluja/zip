@@ -9,7 +9,7 @@ from pyrogram.errors import FloodWait
 from pathlib import Path
 
 API_ID = 20886865  # apna API ID
-API_HASH = "754d23c04f9244762390c095d5d8fe2b""
+API_HASH = "754d23c04f9244762390c095d5d8fe2b"
 BOT_TOKEN = "8108094028:AAHE8BfBW1KvOLb-zQmBe_pj2c_KgZrRWvo"
 
 # Username ke jagah channel IDs
