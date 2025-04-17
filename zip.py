@@ -4,12 +4,12 @@ import time
 import zipfile
 import shutil
 import asyncio
+import subprocess
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import FloodWait
 from pathlib import Path
-from moviepy.editor import VideoFileClip  # For video conversion
-from PIL import Image  # For image conversion
+from PIL import Image
 
 API_ID = 20886865
 API_HASH = "754d23c04f9244762390c095d5d8fe2b"
@@ -18,23 +18,17 @@ BOT_TOKEN = "8108094028:AAHE8BfBW1KvOLb-zQmBe_pj2c_KgZrRWvo"
 channel1_id = -1002692719794
 channel2_id = -1002638090230
 
-# user_id : mode (direct/channel1/both)
 user_modes = {}
-
 app = Client("zip_upload_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 state_file = "bot_state.json"
-
-# Initialize or load the state file
 if not os.path.exists(state_file):
     with open(state_file, "w") as f:
         json.dump({"downloads": []}, f)
 
 def save_state():
     with open(state_file, "w") as f:
-        json.dump({
-            "downloads": user_modes,  # Save current user mode or download state
-        }, f)
+        json.dump({"downloads": user_modes}, f)
 
 def load_state():
     with open(state_file, "r") as f:
@@ -63,7 +57,6 @@ async def handle_zip(client: Client, message: Message):
 
     mode = user_modes.get(message.from_user.id, "both")
 
-    # Check if the file was already processed
     state = load_state()
     if message.document.file_id in state["downloads"]:
         return await message.reply_text("This file has already been processed.")
@@ -86,14 +79,13 @@ async def handle_zip(client: Client, message: Message):
                     app.loop
                 )
             except Exception as e:
-                print(f"Error during progress update: {e}")
+                print(f"Progress update error: {e}")
 
     await message.download(
         file_name=zip_path,
         progress=sync_progress
     )
 
-    # Mark the file as downloaded in state
     state["downloads"].append(message.document.file_id)
     save_state()
 
@@ -115,33 +107,34 @@ async def handle_zip(client: Client, message: Message):
     file_paths = list(Path(extract_path).rglob("*.*"))
     if not file_paths:
         await status_message.edit_text("No files found in ZIP.")
-        os.remove(zip_path)  # Delete zip immediately after processing
-        shutil.rmtree(extract_path)  # Clean up extracted folder
+        os.remove(zip_path)
+        shutil.rmtree(extract_path)
         return
 
     for i, file in enumerate(file_paths, 1):
         file_path = str(file)
 
-        # Check and convert video format to .mp4
+        # Convert videos to mp4 if needed
         if file_path.lower().endswith(('.avi', '.mov', '.flv', '.mkv', '.webm')):
-            converted_file_path = f"{file.stem}.mp4"
+            converted_path = f"{file.stem}.mp4"
             try:
-                clip = VideoFileClip(file_path)
-                clip.write_videofile(converted_file_path, codec='libx264')
-                file_path = converted_file_path
-            except Exception as e:
-                await status_message.edit_text(f"Error during video conversion: {e}")
+                subprocess.run([
+                    "ffmpeg", "-i", file_path, "-c:v", "libx264", "-preset", "fast", "-crf", "23", converted_path
+                ], check=True)
+                file_path = converted_path
+            except subprocess.CalledProcessError as e:
+                await status_message.edit_text(f"FFmpeg conversion failed: {e}")
                 continue
 
-        # Check and convert image formats (e.g., GIF, BMP, etc.) to PNG
+        # Convert images to PNG
         if file_path.lower().endswith(('gif', 'bmp', 'tiff', 'webp')):
-            converted_image_path = f"{file.stem}.png"
+            converted_img_path = f"{file.stem}.png"
             try:
                 img = Image.open(file_path)
-                img.save(converted_image_path, "PNG")
-                file_path = converted_image_path
+                img.save(converted_img_path, "PNG")
+                file_path = converted_img_path
             except Exception as e:
-                await status_message.edit_text(f"Error during image conversion: {e}")
+                await status_message.edit_text(f"Image conversion failed: {e}")
                 continue
 
         try:
@@ -170,8 +163,9 @@ async def handle_zip(client: Client, message: Message):
     total_time = time.time() - start_time
     await status_message.edit_text(f"Upload complete in {total_time:.2f}s.\nDeleting ZIP from VPS...")
 
-    # Delete files after use
     os.remove(zip_path)
     shutil.rmtree(extract_path)
 
     await status_message.edit_text("All done! ZIP file deleted from VPS.")
+
+app.run()
