@@ -1,3 +1,4 @@
+import json
 import os
 import time
 import zipfile
@@ -7,6 +8,8 @@ from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import FloodWait
 from pathlib import Path
+from moviepy.editor import VideoFileClip  # For video conversion
+from PIL import Image  # For image conversion
 
 API_ID = 20886865
 API_HASH = "754d23c04f9244762390c095d5d8fe2b"
@@ -20,6 +23,22 @@ user_modes = {}
 
 app = Client("zip_upload_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
+state_file = "bot_state.json"
+
+# Initialize or load the state file
+if not os.path.exists(state_file):
+    with open(state_file, "w") as f:
+        json.dump({"downloads": []}, f)
+
+def save_state():
+    with open(state_file, "w") as f:
+        json.dump({
+            "downloads": user_modes,  # Save current user mode or download state
+        }, f)
+
+def load_state():
+    with open(state_file, "r") as f:
+        return json.load(f)
 
 @app.on_message(filters.command("mode") & filters.private)
 async def mode_selector(client: Client, message: Message):
@@ -30,14 +49,12 @@ async def mode_selector(client: Client, message: Message):
     ])
     await message.reply_text("Select upload mode:", reply_markup=keyboard)
 
-
 @app.on_callback_query(filters.regex("mode_"))
 async def mode_callback(client, callback_query):
     user_id = callback_query.from_user.id
     mode = callback_query.data.split("_")[1]
     user_modes[user_id] = mode
     await callback_query.answer(f"Mode set to: {mode.capitalize()}", show_alert=True)
-
 
 @app.on_message(filters.private & filters.document)
 async def handle_zip(client: Client, message: Message):
@@ -46,8 +63,12 @@ async def handle_zip(client: Client, message: Message):
 
     mode = user_modes.get(message.from_user.id, "both")
 
-    status_message = await message.reply_text("Downloading... 0%")  # Status message for progress
+    # Check if the file was already processed
+    state = load_state()
+    if message.document.file_id in state["downloads"]:
+        return await message.reply_text("This file has already been processed.")
 
+    status_message = await message.reply_text("Downloading... 0%")
     zip_path = f"downloads/{message.document.file_id}.zip"
     os.makedirs("downloads", exist_ok=True)
 
@@ -72,6 +93,10 @@ async def handle_zip(client: Client, message: Message):
         progress=sync_progress
     )
 
+    # Mark the file as downloaded in state
+    state["downloads"].append(message.document.file_id)
+    save_state()
+
     await status_message.edit_text("Download complete. Unzipping...")
 
     extract_path = f"extracted/{message.document.file_id}"
@@ -90,18 +115,53 @@ async def handle_zip(client: Client, message: Message):
     file_paths = list(Path(extract_path).rglob("*.*"))
     if not file_paths:
         await status_message.edit_text("No files found in ZIP.")
+        os.remove(zip_path)  # Delete zip immediately after processing
+        shutil.rmtree(extract_path)  # Clean up extracted folder
         return
 
     for i, file in enumerate(file_paths, 1):
         file_path = str(file)
+
+        # Check and convert video format to .mp4
+        if file_path.lower().endswith(('.avi', '.mov', '.flv', '.mkv', '.webm')):
+            converted_file_path = f"{file.stem}.mp4"
+            try:
+                clip = VideoFileClip(file_path)
+                clip.write_videofile(converted_file_path, codec='libx264')
+                file_path = converted_file_path
+            except Exception as e:
+                await status_message.edit_text(f"Error during video conversion: {e}")
+                continue
+
+        # Check and convert image formats (e.g., GIF, BMP, etc.) to PNG
+        if file_path.lower().endswith(('gif', 'bmp', 'tiff', 'webp')):
+            converted_image_path = f"{file.stem}.png"
+            try:
+                img = Image.open(file_path)
+                img.save(converted_image_path, "PNG")
+                file_path = converted_image_path
+            except Exception as e:
+                await status_message.edit_text(f"Error during image conversion: {e}")
+                continue
+
         try:
-            if mode == "direct":
-                await client.send_document(message.from_user.id, document=file_path)
-            elif mode == "ch1":
-                await app.send_document(chat_id=channel1_id, document=file_path)
-            elif mode == "both":
-                await app.send_document(chat_id=channel1_id, document=file_path)
-                await app.send_document(chat_id=channel2_id, document=file_path)
+            if file_path.lower().endswith(('.mp4', '.avi', '.mov', '.flv', '.mkv', '.webm')):
+                if mode == "direct":
+                    await client.send_video(message.from_user.id, video=file_path)
+                elif mode == "ch1":
+                    await app.send_video(chat_id=channel1_id, video=file_path)
+                elif mode == "both":
+                    await app.send_video(chat_id=channel1_id, video=file_path)
+                    await app.send_video(chat_id=channel2_id, video=file_path)
+            elif file_path.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')):
+                if mode == "direct":
+                    await client.send_photo(message.from_user.id, photo=file_path)
+                elif mode == "ch1":
+                    await app.send_photo(chat_id=channel1_id, photo=file_path)
+                elif mode == "both":
+                    await app.send_photo(chat_id=channel1_id, photo=file_path)
+                    await app.send_photo(chat_id=channel2_id, photo=file_path)
+
         except FloodWait as e:
             await asyncio.sleep(e.value)
 
@@ -110,10 +170,8 @@ async def handle_zip(client: Client, message: Message):
     total_time = time.time() - start_time
     await status_message.edit_text(f"Upload complete in {total_time:.2f}s.\nDeleting ZIP from VPS...")
 
+    # Delete files after use
     os.remove(zip_path)
     shutil.rmtree(extract_path)
 
     await status_message.edit_text("All done! ZIP file deleted from VPS.")
-
-
-app.run()
