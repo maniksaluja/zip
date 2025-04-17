@@ -68,7 +68,8 @@ async def handle_zip(client: Client, message: Message):
     start_time = time.time()
     current_percent = 0
 
-    def sync_progress(current, total):
+    # Asynchronous progress function
+    async def sync_progress(current, total):
         nonlocal current_percent
         percent = int((current / total) * 100)
         if percent != current_percent:
@@ -78,6 +79,7 @@ async def handle_zip(client: Client, message: Message):
             except Exception as e:
                 print(f"Progress update error: {e}")
 
+    # Download the file with progress tracking
     await message.download(
         file_name=zip_path,
         progress=sync_progress
