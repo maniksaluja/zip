@@ -6,8 +6,10 @@ import zipfile
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from PIL import Image
-from moviepy.editor import VideoFileClip
+import moviepy
+import moviepy.editor as mp
 
+clip = mp.VideoFileClip("your_video.mp4")
 # Load sensitive data from environment variables
 API_ID = int(os.environ.get("API_ID"))
 API_HASH = os.environ.get("API_HASH")
