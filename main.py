@@ -186,7 +186,8 @@ async def process_zip_file(message: Message, status_message: Message):
                                 photo=file_path,
                                 caption=zip_file_name,
                                 progress=upload_progress_callback,
-                                progress_args=(status_message, TEXT)
+                                progress_args=(status_message, TEXT),
+                                reply_to_message_id = message.id
                             )
                         elif send_method == 'video':
                             await retry_with_flood_wait(
@@ -195,7 +196,8 @@ async def process_zip_file(message: Message, status_message: Message):
                                 video=file_path,
                                 caption=zip_file_name,
                                 progress=upload_progress_callback,
-                                progress_args=(status_message, TEXT)
+                                progress_args=(status_message, TEXT),
+                                reply_to_message_id = message.id
                             )
                         elif send_method == 'audio':
                             await retry_with_flood_wait(
@@ -204,7 +206,8 @@ async def process_zip_file(message: Message, status_message: Message):
                                 audio=file_path,
                                 caption=zip_file_name,
                                 progress=upload_progress_callback,
-                                progress_args=(status_message, TEXT)
+                                progress_args=(status_message, TEXT),
+                                reply_to_message_id = message.id
                             )
                         else:
                             await retry_with_flood_wait(
@@ -213,7 +216,8 @@ async def process_zip_file(message: Message, status_message: Message):
                                 document=file_path,
                                 caption=zip_file_name,
                                 progress=upload_progress_callback,
-                                progress_args=(status_message, TEXT)
+                                progress_args=(status_message, TEXT),
+                                reply_to_message_id = message.id
                             )
                     else:
                         for channel_id in [config['channel_1'], config['channel_2']]:
@@ -224,7 +228,8 @@ async def process_zip_file(message: Message, status_message: Message):
                                     photo=file_path,
                                     caption=zip_file_name,
                                     progress=upload_progress_callback,
-                                    progress_args=(status_message, TEXT)
+                                    progress_args=(status_message, TEXT),
+                                    reply_to_message_id = message.id
                                 )
                             elif send_method == 'video':
                                 await retry_with_flood_wait(
@@ -233,7 +238,8 @@ async def process_zip_file(message: Message, status_message: Message):
                                     video=file_path,
                                     caption=zip_file_name,
                                     progress=upload_progress_callback,
-                                    progress_args=(status_message, TEXT)
+                                    progress_args=(status_message, TEXT),
+                                    reply_to_message_id = message.id
                                 )
                             elif send_method == 'audio':
                                 await retry_with_flood_wait(
@@ -242,7 +248,8 @@ async def process_zip_file(message: Message, status_message: Message):
                                     audio=file_path,
                                     caption=zip_file_name,
                                     progress=upload_progress_callback,
-                                    progress_args=(status_message, TEXT)
+                                    progress_args=(status_message, TEXT),
+                                    reply_to_message_id = message.id
                                 )
                             else:
                                 await retry_with_flood_wait(
@@ -251,7 +258,8 @@ async def process_zip_file(message: Message, status_message: Message):
                                     document=file_path,
                                     caption=zip_file_name,
                                     progress=upload_progress_callback,
-                                    progress_args=(status_message, TEXT)
+                                    progress_args=(status_message, TEXT),
+                                    reply_to_message_id = message.id
                                 )
                                 
                 except Exception as e:
@@ -305,9 +313,9 @@ def load_config():
 
 config = load_config()
 
-API_ID=12345678
-API_HASH="asdf2d1f3sdgds35gs65dggv3s2d"
-BOT_TOKEN="1234567890:dsfgvsdfgvvfd165f"
+API_ID=20886865
+API_HASH="754d23c04f9244762390c095d5d8fe2b"
+BOT_TOKEN="8108094028:AAHE8BfBW1KvOLb-zQmBe_pj2c_KgZrRWvo"
 
 # Initialize Pyrogram client
 app = Client(
