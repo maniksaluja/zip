@@ -27,9 +27,9 @@ def load_config():
 
 config = load_config()
 
-API_ID=20886865
-API_HASH="754d23c04f9244762390c095d5d8fe2b"
-BOT_TOKEN="8108094028:AAHE8BfBW1KvOLb-zQmBe_pj2c_KgZrRWvo"
+API_ID=12345678
+API_HASH="asdf2d1f3sdgds35gs65dggv3s2d"
+BOT_TOKEN="1234567890:dsfgvsdfgvvfd165f"
 
 # Initialize Pyrogram client
 app = Client(
@@ -154,7 +154,10 @@ async def handle_zip(client:Client, message: Message):
             progress_args=(status_message,)
         )
         
-        await status_message.edit_text("Extracting files...")
+        try:
+            await status_message.edit_text("Extracting files...")
+        except:
+            pass
         
         # Extract files
         if zip_file_name.endswith('.zip'):
@@ -174,7 +177,10 @@ async def handle_zip(client:Client, message: Message):
                 
                 progress = (processed_files / total_files) * 100
                 TEXT = f"Uploading: {processed_files}/{total_files} files ({progress:.1f}%)"
-                await status_message.edit_text(TEXT)
+                try:
+                    await status_message.edit_text(TEXT)
+                except:
+                    pass
 
                 try:
                     # Determine file type
@@ -182,9 +188,9 @@ async def handle_zip(client:Client, message: Message):
                     file_ext = file.lower().split('.')[-1] if '.' in file else ''
                     
                     # Check file type based on extension
-                    if file_ext in ['jpg', 'jpeg', 'png', 'gif']:
+                    if file_ext in ['jpg', 'jpeg', 'png']:
                         send_method = 'photo'
-                    elif file_ext in ['mp4', 'avi', 'mkv', 'mov']:
+                    elif file_ext in ['mp4', 'avi', 'mkv', 'mov', 'gif', 'webm', 'flv', 'wmv', 'm4v', '3gp', 'ts', 'f4v']:
                         send_method = 'video'
                     elif file_ext in ['mp3', 'wav', 'ogg', 'm4a']:
                         send_method = 'audio'
