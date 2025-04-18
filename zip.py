@@ -1,210 +1,168 @@
-import json
 import os
-import time
-import zipfile
-import shutil
 import asyncio
-import subprocess
 import logging
-from pathlib import Path
-from PIL import Image
+import json
+import zipfile
 from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from pyrogram.errors import FloodWait, ChannelPrivate
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from PIL import Image
+from moviepy.editor import VideoFileClip
 
-# Logger setup
-logging.basicConfig(
-    filename="vps_log.txt",
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+# Load sensitive data from environment variables
+API_ID = int(os.environ.get("API_ID"))
+API_HASH = os.environ.get("API_HASH")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+OWNER_ID = int(os.environ.get("OWNER_ID"))
 
-API_ID = 20886865
-API_HASH = "754d23c04f9244762390c095d5d8fe2b"
-BOT_TOKEN = "8108094028:AAHE8BfBW1KvOLb-zQmBe_pj2c_KgZrRWvo"
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
+# Channel IDs
 channel1_id = None
 channel2_id = None
-user_modes = {}
 
-app = Client("zip_upload_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# File to save the selected mode
+state_file = "state.json"
 
-state_file = "bot_state.json"
-if not os.path.exists(state_file):
-    with open(state_file, "w") as f:
-        json.dump({"downloads": []}, f)
+# Initialize bot
+app = Client("mode_select_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-def save_state():
-    state = load_state()
-    if not isinstance(state.get("downloads"), list):
-        state["downloads"] = []
+# Load the current state
+def load_state():
+    try:
+        with open(state_file, "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+# Save the current state
+def save_state(state):
     with open(state_file, "w") as f:
         json.dump(state, f)
 
-def load_state():
-    if os.path.exists(state_file):
-        with open(state_file, "r") as f:
-            state = json.load(f)
-        if not isinstance(state.get("downloads"), list):
-            state["downloads"] = []
-        return state
-    return {"downloads": []}
+# Upload helpers
+async def upload_video(client, chat_id, path):
+    await client.send_video(chat_id, video=path)
 
-async def safe_edit(message, text, delay=1.5):
-    await asyncio.sleep(delay)
-    try:
-        await message.edit_text(text)
-    except Exception as e:
-        logging.warning(f"Edit text failed: {e}")
+async def upload_photo(client, chat_id, path):
+    await client.send_photo(chat_id, photo=path)
 
-@app.on_message(filters.command("mode") & filters.private)
-async def mode_selector(client: Client, message: Message):
+async def upload_document(client, chat_id, path):
+    await client.send_document(chat_id, document=path)
+
+# Mode selection command
+@app.on_message(filters.command("mode") & filters.user(OWNER_ID))
+async def select_mode(client, message):
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Direct", callback_data="mode_direct")],
-        [InlineKeyboardButton("Channel 1", callback_data="mode_ch1")],
-        [InlineKeyboardButton("Both", callback_data="mode_both")]
+        [InlineKeyboardButton("Channel 1", callback_data="mode_channel1")],
+        [InlineKeyboardButton("Channel 2", callback_data="mode_channel2")]
     ])
-    await message.reply_text("Select upload mode:", reply_markup=keyboard)
+    await message.reply("Select the channel to upload files:", reply_markup=keyboard)
 
-@app.on_callback_query(filters.regex("mode_"))
-async def mode_callback(client, callback_query):
+# Handle button press
+@app.on_callback_query()
+async def handle_callback_query(client, callback_query):
+    global channel1_id, channel2_id
+
     user_id = callback_query.from_user.id
-    mode = callback_query.data.split("_")[1]
-    user_modes[user_id] = mode
-    await callback_query.answer(f"Mode set to: {mode.capitalize()}", show_alert=True)
-
-@app.on_message(filters.private & filters.document)
-async def handle_zip(client: Client, message: Message):
-    logging.info(f"Received ZIP from {message.from_user.id}")
-
-    if not message.document or not message.document.file_name.endswith(".zip"):
-        return await message.reply_text("Please send a valid ZIP file.")
-
-    mode = user_modes.get(message.from_user.id, "both")
-
+    data = callback_query.data
     state = load_state()
-    if message.document.file_id in state["downloads"]:
-        return await message.reply_text("This file has already been processed.")
 
-    status_message = await message.reply_text("Downloading... 0%")
-    zip_path = f"downloads/{message.document.file_id}.zip"
-    os.makedirs("downloads", exist_ok=True)
+    if data == "mode_channel1":
+        if channel1_id is None:
+            await callback_query.answer("Channel 1 ID is not set.", show_alert=True)
+            return
+        state[str(user_id)] = {"mode": "channel1"}
+    elif data == "mode_channel2":
+        if channel2_id is None:
+            await callback_query.answer("Channel 2 ID is not set.", show_alert=True)
+            return
+        state[str(user_id)] = {"mode": "channel2"}
+    else:
+        await callback_query.answer("Invalid mode selected.", show_alert=True)
+        return
 
-    start_time = time.time()
-    current_percent = 0
+    save_state(state)
+    await callback_query.answer("Mode selected successfully!")
+    await callback_query.message.edit_text("Mode has been set. Now send a ZIP file.")
 
-    async def sync_progress(current, total):
-        nonlocal current_percent
-        percent = int((current / total) * 100)
-        if percent != current_percent:
-            current_percent = percent
-            await safe_edit(status_message, f"Downloading...\n{percent}% completed", delay=0.5)
+# Set Channel 1 ID
+@app.on_message(filters.command("setchannel1") & filters.user(OWNER_ID))
+async def set_channel1(client, message):
+    global channel1_id
+    try:
+        channel1_id = int(message.text.split(None, 1)[1])
+        await message.reply(f"Channel 1 set to: `{channel1_id}`")
+    except Exception:
+        await message.reply("Please provide a valid Channel 1 ID.")
 
-    await message.download(file_name=zip_path, progress=sync_progress)
-    state["downloads"].append(message.document.file_id)
-    save_state()
+# Set Channel 2 ID
+@app.on_message(filters.command("setchannel2") & filters.user(OWNER_ID))
+async def set_channel2(client, message):
+    global channel2_id
+    try:
+        channel2_id = int(message.text.split(None, 1)[1])
+        await message.reply(f"Channel 2 set to: `{channel2_id}`")
+    except Exception:
+        await message.reply("Please provide a valid Channel 2 ID.")
 
-    await safe_edit(status_message, "Download complete. Unzipping...")
+# Handle ZIP file
+@app.on_message(filters.document & filters.user(OWNER_ID))
+async def handle_zip_file(client, message):
+    user_id = str(message.from_user.id)
+    state = load_state()
+    mode = state.get(user_id, {}).get("mode")
 
-    extract_path = f"extracted/{message.document.file_id}"
+    if not mode:
+        await message.reply("Please select a mode first using /mode command.")
+        return
+
+    channel_id = channel1_id if mode == "channel1" else channel2_id
+    if channel_id is None:
+        await message.reply("Channel ID not set.")
+        return
+
+    file_path = await message.download()
+    extract_path = f"extracted_{user_id}"
     os.makedirs(extract_path, exist_ok=True)
 
-    try:
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(extract_path)
-    except zipfile.BadZipFile:
-        await safe_edit(status_message, "Invalid ZIP archive.")
-        os.remove(zip_path)
-        return
+    with zipfile.ZipFile(file_path, "r") as zip_ref:
+        zip_ref.extractall(extract_path)
 
-    await safe_edit(status_message, "Unzipped. Starting upload...")
+    os.remove(file_path)
 
-    file_paths = list(Path(extract_path).rglob("*.*"))
-    if not file_paths:
-        await safe_edit(status_message, "No files found in ZIP.")
-        os.remove(zip_path)
-        shutil.rmtree(extract_path)
-        return
+    await message.reply("Uploading files...")
 
-    if channel1_id:
-        try:
-            await app.get_chat(channel1_id)
-        except Exception as e:
-            logging.error(f"Channel 1 access error: {e}")
-            await safe_edit(status_message, f"Channel 1 is not accessible.")
-            return
+    # Separate files by type
+    videos, images, documents = [], [], []
 
-    if channel2_id:
-        try:
-            await app.get_chat(channel2_id)
-        except Exception as e:
-            logging.error(f"Channel 2 access error: {e}")
-            await safe_edit(status_message, f"Channel 2 is not accessible.")
-            return
+    for root, _, files in os.walk(extract_path):
+        for file_name in sorted(files):
+            file_path = os.path.join(root, file_name)
+            ext = file_name.lower().split('.')[-1]
 
-    for i, file in enumerate(file_paths, 1):
-        file_path = str(file)
+            if ext in ("mp4", "mkv", "avi", "mov"):
+                videos.append(file_path)
+            elif ext in ("jpg", "jpeg", "png", "gif", "bmp"):
+                images.append(file_path)
+            else:
+                documents.append(file_path)
 
-        if file_path.lower().endswith(('.avi', '.mov', '.flv', '.mkv', '.webm')):
-            converted_path = f"{file.stem}.mp4"
-            try:
-                subprocess.run([
-                    "ffmpeg", "-i", file_path, "-c:v", "libx264", "-preset", "fast", "-crf", "23", converted_path
-                ], check=True)
-                file_path = converted_path
-            except subprocess.CalledProcessError as e:
-                await safe_edit(status_message, f"FFmpeg conversion failed: {e}")
-                logging.error(f"Video conversion failed: {e}")
-                continue
+    # Upload files in categorized order
+    for v in videos:
+        await upload_video(client, channel_id, v)
+    for img in images:
+        await upload_photo(client, channel_id, img)
+    for doc in documents:
+        await upload_document(client, channel_id, doc)
 
-        if file_path.lower().endswith(('gif', 'bmp', 'tiff', 'webp')):
-            converted_img_path = f"{file.stem}.png"
-            try:
-                img = Image.open(file_path)
-                img.save(converted_img_path, "PNG")
-                file_path = converted_img_path
-            except Exception as e:
-                await safe_edit(status_message, f"Image conversion failed: {e}")
-                logging.error(f"Image conversion failed: {e}")
-                continue
+    # Cleanup
+    for path in [*videos, *images, *documents]:
+        os.remove(path)
+    os.rmdir(extract_path)
 
-        try:
-            if file_path.lower().endswith(('.mp4', '.avi', '.mov', '.flv', '.mkv', '.webm')):
-                if mode == "direct":
-                    await client.send_video(message.from_user.id, video=file_path)
-                elif mode == "ch1" and channel1_id:
-                    await app.send_video(chat_id=channel1_id, video=file_path)
-                elif mode == "both" and channel1_id and channel2_id:
-                    await app.send_video(chat_id=channel1_id, video=file_path)
-                    await asyncio.sleep(2)
-                    await app.send_video(chat_id=channel2_id, video=file_path)
-            elif file_path.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')):
-                if mode == "direct":
-                    await client.send_photo(message.from_user.id, photo=file_path)
-                elif mode == "ch1" and channel1_id:
-                    await app.send_photo(chat_id=channel1_id, photo=file_path)
-                elif mode == "both" and channel1_id and channel2_id:
-                    await app.send_photo(chat_id=channel1_id, photo=file_path)
-                    await asyncio.sleep(2)
-                    await app.send_photo(chat_id=channel2_id, photo=file_path)
-        except FloodWait as e:
-            logging.warning(f"FloodWait: Sleeping for {e.value}s")
-            await asyncio.sleep(e.value)
-        except ChannelPrivate as e:
-            logging.error(f"Channel access error: {e}")
-            await safe_edit(status_message, f"Channel access error: {e}")
-            continue
+    await message.reply("All files uploaded successfully.")
 
-        await safe_edit(status_message, f"Uploaded {i}/{len(file_paths)} files...")
-        await asyncio.sleep(1.5)
-
-    total_time = time.time() - start_time
-    await safe_edit(status_message, f"Upload complete in {total_time:.2f}s. Deleting ZIP from VPS...")
-
-    os.remove(zip_path)
-    shutil.rmtree(extract_path)
-
-    await safe_edit(status_message, "All done! ZIP file deleted from VPS.")
-    logging.info(f"Upload completed for {message.from_user.id} in {total_time:.2f}s")
-
+# Run the bot
 app.run()
