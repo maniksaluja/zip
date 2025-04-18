@@ -1,5 +1,2 @@
-moviepy==2.1.2
-imageio[ffmpeg]
-numpy
-pillow
-python-dotenv
+patool
+pyrofork
