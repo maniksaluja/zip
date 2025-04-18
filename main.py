@@ -27,9 +27,9 @@ def load_config():
 
 config = load_config()
 
-API_ID=12345678
-API_HASH="asdf2d1f3sdgds35gs65dggv3s2d"
-BOT_TOKEN="1234567890:dsfgvsdfgvvfd165f"
+API_ID=20886865
+API_HASH="754d23c04f9244762390c095d5d8fe2b"
+BOT_TOKEN="8108094028:AAHE8BfBW1KvOLb-zQmBe_pj2c_KgZrRWvo"
 
 # Initialize Pyrogram client
 app = Client(
