@@ -139,7 +139,7 @@ async def process_zip_file(message: Message, status_message: Message):
                     if file_ext in ['jpg', 'jpeg', 'png']:
                         send_method = 'photo'
                     elif file_ext in ['mp4', 'avi', 'mkv', 'mov', 'gif', 'webm', 'flv', 'wmv', 'm4v', '3gp', 'ts', 'f4v']:
-                        send_method = 'video'
+                        send_method = 'document'
                     elif file_ext in ['mp3', 'wav', 'ogg', 'm4a']:
                         send_method = 'audio'
                     else:
