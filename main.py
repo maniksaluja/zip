@@ -315,7 +315,7 @@ config = load_config()
 
 API_ID=26974987
 API_HASH="449b9bb5b57b6f91410031c806036a27"
-BOT_TOKEN="7825330030:AAGFl-VwMFonFqaJggVzL3Cs12URtuZy4lw"
+BOT_TOKEN="7883007323:AAEziN0KMaC78dfmIlYGfHEzITnYdEsEsTg"
 
 # Initialize Pyrogram client
 app = Client(
