@@ -1,18 +1,30 @@
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+import logging
+import warnings
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram.error import TelegramError
 
-def start(update, context):
+# Suppress warnings
+warnings.filterwarnings("ignore")
+
+# Enable logging
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Bot start command"""
-    update.message.reply_text(
+    await update.message.reply_text(
         "Bot started! Forward any message from a channel, and I'll try to get the channel link and uploader's username."
     )
 
-def handle_message(update, context):
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle forwarded messages"""
     message = update.message
     
     if not message.forward_from_chat:
-        update.message.reply_text("Please forward a message from a channel.")
+        await update.message.reply_text("Please forward a message from a channel.")
         return
 
     # Extract channel information
@@ -24,7 +36,7 @@ def handle_message(update, context):
     channel_link = f"https://t.me/{channel_username}" if channel_username else None
 
     # Initialize response
-    response = f"**Channel Info**\nTitle: {channel_title}\nID: {channel_id}\n"
+    response = f"<b>Channel Info</b>\nTitle: {channel_title}\nID: {channel_id}\n"
 
     # Check if channel is public or private
     if channel_type == "channel":
@@ -34,10 +46,10 @@ def handle_message(update, context):
             response += "Link: Private Channel\n"
             # Try to generate an invite link if bot has admin permissions
             try:
-                invite_link = context.bot.export_chat_invite_link(chat_id=channel_id)
+                invite_link = await context.bot.export_chat_invite_link(chat_id=channel_id)
                 response += f"Invite Link: {invite_link}\n"
             except TelegramError as e:
-                response += "Could not generate invite link (Bot needs admin permissions or channel is restricted).\n"
+                response += f"Could not generate invite link: {str(e)}\n"
 
     # Try to get uploader's information
     uploader_info = "Uploader: Not available\n"
@@ -57,29 +69,30 @@ def handle_message(update, context):
     response += uploader_info
 
     # Send response
-    update.message.reply_text(response, parse_mode="Markdown")
+    await update.message.reply_text(response, parse_mode="HTML")
 
-def error_handler(update, context):
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle errors"""
-    update.message.reply_text(f"An error occurred: {context.error}")
+    logger.error(f"Update {update} caused error {context.error}")
+    if update.message:
+        await update.message.reply_text(f"An error occurred: {context.error}")
 
 def main():
     """Main function to run the bot"""
-    # Replace 'YOUR_BOT_TOKEN' with your actual bot token
+    # Your bot token
     BOT_TOKEN = "8145736202:AAEqjJa62tuj40TPaYehFkAJOVJiQk6doLw"
-    
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
+
+    # Create the Application
+    application = Application.builder().token(BOT_TOKEN).build()
 
     # Add handlers
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.all & ~Filters.command, handle_message))
-    dp.add_error_handler(error_handler)
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_message))
+    application.add_error_handler(error_handler)
 
     # Start the bot
-    updater.start_polling()
     print("Bot is running...")
-    updater.idle()
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     main()
