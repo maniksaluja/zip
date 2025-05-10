@@ -65,15 +65,18 @@ async def extract_file_data(message):
 
     # Forwarded information (if available)
     if message.forward:
-        forwarded_from = message.forward.from_id
-        forwarded_chat = await client.get_entity(forwarded_from)
-        data["Forwarded From"] = {
-            "Sender ID": forwarded_from,
-            "Sender Username": getattr(forwarded_chat, 'username', None),
-            "Sender First Name": getattr(forwarded_chat, 'first_name', None),
-            "Sender Last Name": getattr(forwarded_chat, 'last_name', None),
-            "Chat Title": getattr(forwarded_chat, 'title', None)
-        }
+        try:
+            forwarded_from = message.forward.from_id
+            forwarded_chat = await client.get_entity(forwarded_from)
+            data["Forwarded From"] = {
+                "Sender ID": forwarded_from,
+                "Sender Username": getattr(forwarded_chat, 'username', None),
+                "Sender First Name": getattr(forwarded_chat, 'first_name', None),
+                "Sender Last Name": getattr(forwarded_chat, 'last_name', None),
+                "Chat Title": getattr(forwarded_chat, 'title', None)
+            }
+        except Exception as e:
+            data["Forwarded From"] = f"Could not fetch forwarded details: {str(e)}"
     else:
         data["Forwarded From"] = "This message is not forwarded."
 
