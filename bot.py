@@ -18,7 +18,8 @@ async def extract_file_data(message):
         "File Content": None,
         "Chat/Context Info": {},
         "User Data": {},
-        "Encryption Keys": None
+        "Encryption Keys": None,
+        "Forwarded From": {}
     }
 
     if not message.media or not message.file:
@@ -61,6 +62,21 @@ async def extract_file_data(message):
     }
 
     data["Encryption Keys"] = "End-to-end encrypted (Secret Chat)" if message.is_private and not message.via_bot else "Not applicable"
+
+    # Forwarded information (if available)
+    if message.forward:
+        forwarded_from = message.forward.from_id
+        forwarded_chat = await client.get_entity(forwarded_from)
+        data["Forwarded From"] = {
+            "Sender ID": forwarded_from,
+            "Sender Username": getattr(forwarded_chat, 'username', None),
+            "Sender First Name": getattr(forwarded_chat, 'first_name', None),
+            "Sender Last Name": getattr(forwarded_chat, 'last_name', None),
+            "Chat Title": getattr(forwarded_chat, 'title', None)
+        }
+    else:
+        data["Forwarded From"] = "This message is not forwarded."
+
     return data
 
 # Event handler for new messages
