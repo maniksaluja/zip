@@ -26,7 +26,10 @@ async def extract_file_data(message):
 
     file = message.file
     data["File ID"] = file.id
-    data["Unique File ID"] = file.file_reference.hex() if file.file_reference else file.id
+
+    # Fallback to file.id if file_reference is not available
+    data["Unique File ID"] = getattr(file, 'file_reference', None) or file.id
+
     data["Metadata"] = {
         "File Type": file.mime_type or 'Unknown',
         "File Size": file.size,
