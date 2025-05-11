@@ -1,107 +1,214 @@
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from telegram.error import TelegramError
+from pyrogram import Client, filters, enums
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from motor.motor_asyncio import AsyncIOMotorClient
+import asyncio
+import logging
+from urllib.parse import quote
 
-# Replace with your bot token from BotFather
-BOT_TOKEN = '8145736202:AAEqjJa62tuj40TPaYehFkAJOVJiQk6doLw'
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Function to handle /start command
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Hello! Send me a Telegram invite link or forward a message from a channel. "
-        "I'll extract the channel details and try to generate a join link."
+# Bot configuration
+API_ID = "20886865"
+API_HASH = "754d23c04f9244762390c095d5d8fe2b""
+BOT_TOKEN = "8145736202:AAEqjJa62tuj40TPaYehFkAJOVJiQk6doLw"
+SUDO_USERS = [7901884010]  # List of sudo user IDs
+MONGO_URI = "mongodb+srv://shanaya:godfather11@cluster0.t3yd7.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+DB_NAME = "telegram_bot"
+COLLECTION_NAME = "links"
+
+# Initialize Pyrogram client
+app = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+
+# Initialize MongoDB client
+mongo_client = AsyncIOMotorClient(MONGO_URI)
+db = mongo_client[DB_NAME]
+collection = db[COLLECTION_NAME]
+
+# Store temporary data
+temp_data = {}
+
+async def create_link(sudo_id, channel_id, message_ids):
+    """Generate a unique link for forwarded messages."""
+    link_id = f"{sudo_id}_{channel_id}_{int(asyncio.time())}"
+    link = f"https://t.me/{(await app.get_me()).username}?start={quote(link_id)}"
+    await collection.insert_one({
+        "link_id": link_id,
+        "sudo_id": sudo_id,
+        "channel_id": channel_id,
+        "message_ids": message_ids,
+        "approved_users": [],
+        "used_by": []
+    })
+    return link
+
+async def get_existing_links(sudo_id):
+    """Fetch all links created by a sudo user."""
+    links = []
+    async for doc in collection.find({"sudo_id": sudo_id}):
+        links.append({"link_id": doc["link_id"], "link": f"https://t.me/{(await app.get_me()).username}?start={quote(doc['link_id'])}"})
+    return links
+
+@app.on_message(filters.command("make") & filters.user(SUDO_USERS))
+async def make_command(client, message):
+    """Handle /make command to show existing links and create new button."""
+    sudo_id = message.from_user.id
+    existing_links = await get_existing_links(sudo_id)
+    
+    buttons = [[InlineKeyboardButton("Create New", callback_data="create_new")]]
+    if existing_links:
+        for link in existing_links:
+            buttons.append([InlineKeyboardButton(f"Link: {link['link_id']}", url=link['link'])])
+    
+    await message.reply("Existing links:", reply_markup=InlineKeyboardMarkup(buttons))
+
+@app.on_callback_query(filters.regex("create_new"))
+async def create_new_button(client, callback_query):
+    """Handle Create New button click."""
+    sudo_id = callback_query.from_user.id
+    if sudo_id not in SUDO_USERS:
+        await callback_query.answer("Unauthorized", show_alert=True)
+        return
+    
+    temp_data[sudo_id] = {"state": "waiting_for_channel"}
+    await callback_query.message.reply(
+        "Please provide the channel copy link (start and end) or forward messages from the channel. Use /done when finished."
     )
 
-# Function to handle invite links or forwarded messages
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message
-    text = message.text if message.text else None
-    forwarded_chat = message.forward_from_chat if message.forward_from_chat else None
-
+@app.on_message(filters.user(SUDO_USERS) & filters.text & filters.regex(r"https://t.me/"))
+async def handle_channel_link(client, message):
+    """Handle channel link provided by sudo user."""
+    sudo_id = message.from_user.id
+    if sudo_id not in temp_data or temp_data[sudo_id]["state"] != "waiting_for_channel":
+        return
+    
+    channel_link = message.text
     try:
-        # Case 1: Handle invite link
-        if text and (text.startswith('https://t.me/') or text.startswith('t.me/')):
-            await message.reply_text("Processing invite link...")
-            try:
-                # Fetch chat details from invite link
-                chat_info = await context.bot.get_chat(text)
-                chat_id = chat_info.id
-                chat_type = chat_info.type
-                chat_title = chat_info.title
-                username = chat_info.username
-
-                # Prepare response
-                response = f"Chat Info:\nID: {chat_id}\nType: {chat_type}\nTitle: {chat_title}\n"
-                
-                if username:
-                    normal_link = f"t.me/{username.lstrip('@')}"
-                    response += f"Normal Link: {normal_link}"
-                else:
-                    response += "This is a private channel/group. No public username available.\n"
-                    
-                    # Try to generate invite link if bot is admin
-                    try:
-                        invite_link = await context.bot.export_chat_invite_link(chat_id)
-                        response += f"Generated Invite Link: {invite_link}"
-                    except TelegramError as e:
-                        response += f"Cannot generate invite link: {str(e)} (Bot may not be admin)"
-
-                await message.reply_text(response)
-            
-            except TelegramError as e:
-                await message.reply_text(
-                    f"Error processing link: {str(e)}\n"
-                    "Possible reasons:\n"
-                    "- Invalid link.\n"
-                    "- Bot doesn't have access to the channel.\n"
-                    "- Channel is private and restricted."
-                )
-
-        # Case 2: Handle forwarded message
-        elif forwarded_chat:
-            await message.reply_text("Processing forwarded message...")
-            chat_id = forwarded_chat.id
-            chat_type = forwarded_chat.type
-            chat_title = forwarded_chat.title
-            username = forwarded_chat.username
-
-            # Prepare response
-            response = f"Chat Info:\nID: {chat_id}\nType: {chat_type}\nTitle: {chat_title}\n"
-            
-            if username:
-                normal_link = f"t.me/{username.lstrip('@')}"
-                response += f"Normal Link: {normal_link}"
-            else:
-                response += "This is a private channel/group. No public username available.\n"
-                
-                # Try to generate invite link if bot is admin
-                try:
-                    invite_link = await context.bot.export_chat_invite_link(chat_id)
-                    response += f"Generated Invite Link: {invite_link}"
-                except TelegramError as e:
-                    response += f"Cannot generate invite link: {str(e)} (Bot may not be admin)"
-
-            await message.reply_text(response)
-
-        else:
-            await message.reply_text(
-                "Please send a valid Telegram invite link or forward a message from a channel."
-            )
-
+        channel = await client.get_chat(channel_link.split("/")[-2])
+        temp_data[sudo_id]["channel_id"] = channel.id
+        temp_data[sudo_id]["state"] = "waiting_for_done"
+        await message.reply("Channel link received. Please forward messages or use /done when ready.")
     except Exception as e:
-        await message.reply_text(f"Unexpected error: {str(e)}")
+        logger.error(f"Error processing channel link: {e}")
+        await message.reply("Invalid channel link. Please try again.")
 
-# Main function to set up the bot
-def main():
-    app = Application.builder().token(BOT_TOKEN).build()
+@app.on_message(filters.user(SUDO_USERS) & filters.forwarded)
+async def handle_forwarded_messages(client, message):
+    """Handle forwarded messages from sudo user."""
+    sudo_id = message.from_user.id
+    if sudo_id not in temp_data or temp_data[sudo_id]["state"] not in ["waiting_for_channel", "waiting_for_done"]:
+        return
+    
+    channel_id = message.forward_from_chat.id
+    message_id = message.id
+    
+    if "message_ids" not in temp_data[sudo_id]:
+        temp_data[sudo_id]["message_ids"] = []
+        temp_data[sudo_id]["channel_id"] = channel_id
+    
+    temp_data[sudo_id]["message_ids"].append(message_id)
+    await message.reply("Message forwarded. Continue forwarding or use /done.")
 
-    # Add handlers
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT | filters.FORWARDED, handle_message))
+@app.on_message(filters.command("done") & filters.user(SUDO_USERS))
+async def done_command(client, message):
+    """Handle /done command to generate link."""
+    sudo_id = message.from_user.id
+    if sudo_id not in temp_data or "channel_id" not in temp_data[sudo_id]:
+        await message.reply("No channel or messages provided.")
+        return
+    
+    channel_id = temp_data[sudo_id]["channel_id"]
+    message_ids = temp_data[sudo_id].get("message_ids", [])
+    
+    if not message_ids:
+        await message.reply("No messages forwarded. Please forward messages or provide a channel link.")
+        return
+    
+    # Generate and store link
+    link = await create_link(sudo_id, channel_id, message_ids)
+    del temp_data[sudo_id]
+    
+    await message.reply(f"Link created: {link}")
 
-    # Start the bot
-    print("Bot is running...")
-    app.run_polling()
+@app.on_message(filters.command("a") & filters.user(SUDO_USERS))
+async def approve_command(client, message):
+    """Handle /a command to approve a user for a link."""
+    sudo_id = message.from_user.id
+    try:
+        user_id = int(message.command[1])
+    except (IndexError, ValueError):
+        await message.reply("Usage: /a <UserID>")
+        return
+    
+    existing_links = await get_existing_links(sudo_id)
+    if not existing_links:
+        await message.reply("No links found.")
+        return
+    
+    buttons = []
+    for link in existing_links:
+        buttons.append([InlineKeyboardButton(f"Link: {link['link_id']}", callback_data=f"approve_{link['link_id']}_{user_id}")])
+    
+    await message.reply("Select link to approve:", reply_markup=InlineKeyboardMarkup(buttons))
 
-if __name__ == '__main__':
-    main()
+@app.on_callback_query(filters.regex(r"approve_(.+)_(\d+)"))
+async def approve_link(client, callback_query):
+    """Handle approval button click."""
+    sudo_id = callback_query.from_user.id
+    if sudo_id not in SUDO_USERS:
+        await callback_query.answer("Unauthorized", show_alert=True)
+        return
+    
+    link_id, user_id = callback_query.data.split("_")[1], int(callback_query.data.split("_")[2])
+    await collection.update_one(
+        {"link_id": link_id},
+        {"$addToSet": {"approved_users": user_id}}
+    )
+    await callback_query.message.reply(f"User {user_id} approved for link {link_id}.")
+    await callback_query.answer()
+
+@app.on_message(filters.command("start") & filters.regex(r"start (.+)"))
+async def start_command(client, message):
+    """Handle /start command with link ID."""
+    link_id = message.matches[0].group(1)
+    user_id = message.from_user.id
+    
+    link_doc = await collection.find_one({"link_id": link_id})
+    if not link_doc:
+        await message.reply("Invalid or expired link.")
+        return
+    
+    if user_id not in link_doc["approved_users"]:
+        await message.reply("You are not approved to access this content.")
+        return
+    
+    if user_id in link_doc["used_by"]:
+        await message.reply("Approval rejected: You have already used this link.")
+        return
+    
+    # Mark link as used
+    await collection.update_one(
+        {"link_id": link_id},
+        {"$addToSet": {"used_by": user_id}}
+    )
+    
+    # Forward messages with flood control
+    for msg_id in link_doc["message_ids"]:
+        try:
+            await client.forward_messages(
+                chat_id=user_id,
+                from_chat_id=link_doc["channel_id"],
+                message_ids=msg_id
+            )
+            await asyncio.sleep(0.5)  # Flood control
+        except Exception as e:
+            logger.error(f"Error forwarding message: {e}")
+            await message.reply("Error forwarding some messages.")
+            break
+    
+    await message.reply("All content forwarded successfully.")
+
+# Run the bot
+if __name__ == "__main__":
+    app.run()
