@@ -1,8 +1,10 @@
 from pyrogram import Client, filters, enums
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.errors import ChannelInvalid, ChannelPrivate, PeerIdInvalid
 from motor.motor_asyncio import AsyncIOMotorClient
 import asyncio
 import logging
+import re
 from urllib.parse import quote
 
 # Setup logging
@@ -50,6 +52,20 @@ async def get_existing_links(sudo_id):
         links.append({"link_id": doc["link_id"], "link": f"https://t.me/{(await app.get_me()).username}?start={quote(doc['link_id'])}"})
     return links
 
+async def extract_chat_id_from_link(link):
+    """Extract chat ID from a Telegram link (public or private)."""
+    # Match public channel: https://t.me/username
+    public_match = re.match(r"https://t.me/(\w+)", link)
+    if public_match:
+        return public_match.group(1)
+    
+    # Match private channel: https://t.me/c/123456789/...
+    private_match = re.match(r"https://t.me/c/(\d+)", link)
+    if private_match:
+        return f"-100{private_match.group(1)}"
+    
+    return None
+
 @app.on_message(filters.command("make") & filters.user(SUDO_USERS))
 async def make_command(client, message):
     """Handle /make command to show existing links and create new button."""
@@ -73,7 +89,7 @@ async def create_new_button(client, callback_query):
     
     temp_data[sudo_id] = {"state": "waiting_for_channel"}
     await callback_query.message.reply(
-        "Please provide the channel copy link (start and end) or forward messages from the channel. Use /done when finished."
+        "Please provide the channel copy link (e.g., https://t.me/c/123456789/1) or forward messages from the channel. Use /done when finished."
     )
 
 @app.on_message(filters.user(SUDO_USERS) & filters.text & filters.regex(r"https://t.me/"))
@@ -83,15 +99,34 @@ async def handle_channel_link(client, message):
     if sudo_id not in temp_data or temp_data[sudo_id]["state"] != "waiting_for_channel":
         return
     
-    channel_link = message.text
+    channel_link = message.text.split()[0]  # Take the first link
+    chat_id = await extract_chat_id_from_link(channel_link)
+    
+    if not chat_id:
+        await message.reply("Invalid channel link format. Please provide a valid public (https://t.me/username) or private (https://t.me/c/123456789) link.")
+        return
+    
     try:
-        channel = await client.get_chat(channel_link.split("/")[-2])
+        # Attempt to get chat details
+        channel = await client.get_chat(chat_id)
         temp_data[sudo_id]["channel_id"] = channel.id
         temp_data[sudo_id]["state"] = "waiting_for_done"
-        await message.reply("Channel link received. Please forward messages or use /done when ready.")
+        await message.reply(
+            f"Channel recognized: {channel.title or channel.id}. "
+            "Please forward messages or use /done when ready."
+        )
+    except ChannelInvalid:
+        logger.error(f"ChannelInvalid error for chat_id: {chat_id}")
+        await message.reply("The channel is invalid or inaccessible. Ensure the bot is a member and has admin rights.")
+    except ChannelPrivate:
+        logger.error(f"ChannelPrivate error for chat_id: {chat_id}")
+        await message.reply("The channel is private and the bot cannot access it. Please make the bot an admin.")
+    except PeerIdInvalid:
+        logger.error(f"PeerIdInvalid error for chat_id: {chat_id}")
+        await message.reply("Invalid chat ID. Please check the link or ensure the bot is in the channel.")
     except Exception as e:
-        logger.error(f"Error processing channel link: {e}")
-        await message.reply("Invalid channel link. Please try again.")
+        logger.error(f"Unexpected error processing channel link: {e}")
+        await message.reply(f"An error occurred: {str(e)}. Please try again or contact support.")
 
 @app.on_message(filters.user(SUDO_USERS) & filters.forwarded)
 async def handle_forwarded_messages(client, message):
