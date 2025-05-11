@@ -5,6 +5,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import asyncio
 import logging
 import re
+import time
 from urllib.parse import quote
 
 # Setup logging
@@ -33,7 +34,7 @@ temp_data = {}
 
 async def create_link(sudo_id, channel_id, message_ids):
     """Generate a unique link for forwarded messages."""
-    link_id = f"{sudo_id}_{channel_id}_{int(asyncio.time())}"
+    link_id = f"{sudo_id}_{channel_id}_{int(time.time())}"
     link = f"https://t.me/{(await app.get_me()).username}?start={quote(link_id)}"
     await collection.insert_one({
         "link_id": link_id,
@@ -133,6 +134,10 @@ async def handle_forwarded_messages(client, message):
     """Handle forwarded messages from sudo user."""
     sudo_id = message.from_user.id
     if sudo_id not in temp_data or temp_data[sudo_id]["state"] not in ["waiting_for_channel", "waiting_for_done"]:
+        return
+    
+    if not message.forward_from_chat:
+        await message.reply("This message does not appear to be forwarded from a channel. Please forward a message from the target channel.")
         return
     
     channel_id = message.forward_from_chat.id
