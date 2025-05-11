@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 # Bot configuration
 API_ID = "20886865"
-API_HASH = "754d23c04f9244762390c095d5d8fe2b""
+API_HASH = "754d23c04f9244762390c095d5d8fe2b"
 BOT_TOKEN = "8145736202:AAEqjJa62tuj40TPaYehFkAJOVJiQk6doLw"
 SUDO_USERS = [7901884010]  # List of sudo user IDs
 MONGO_URI = "mongodb+srv://shanaya:godfather11@cluster0.t3yd7.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
