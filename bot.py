@@ -1,15 +1,16 @@
 from pyrogram import Client, filters, enums
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from pyrogram.errors import ChannelInvalid, ChannelPrivate, PeerIdInvalid
+from pyrogram.errors import ChannelInvalid, ChannelPrivate, PeerIdInvalid, FloodWait
 from motor.motor_asyncio import AsyncIOMotorClient
 import asyncio
 import logging
 import re
 import time
+import requests
 from urllib.parse import quote
 
 # Setup logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Bot configuration
@@ -20,6 +21,7 @@ SUDO_USERS = [7901884010]  # List of sudo user IDs
 MONGO_URI = "mongodb+srv://shanaya:godfather11@cluster0.t3yd7.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 DB_NAME = "telegram_bot"
 COLLECTION_NAME = "links"
+BITLY_TOKEN = "your_bitly_access_token"  # Get from bitly.com
 
 # Initialize Pyrogram client
 app = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
@@ -32,10 +34,26 @@ collection = db[COLLECTION_NAME]
 # Store temporary data
 temp_data = {}
 
+async def shorten_url(long_url):
+    """Shorten URL using Bitly API to WUDGA-style format."""
+    headers = {
+        "Authorization": f"Bearer {BITLY_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    data = {"long_url": long_url}
+    try:
+        response = requests.post("https://api-ssl.bitly.com/v4/shorten", headers=headers, json=data)
+        response.raise_for_status()
+        return response.json().get("link", long_url)
+    except Exception as e:
+        logger.error(f"Error shortening URL: {e}")
+        return long_url
+
 async def create_link(sudo_id, channel_id, message_ids):
     """Generate a unique link for forwarded messages."""
     link_id = f"{sudo_id}_{channel_id}_{int(time.time())}"
-    link = f"https://t.me/{(await app.get_me()).username}?start={quote(link_id)}"
+    long_url = f"https://t.me/{(await app.get_me()).username}?start={quote(link_id)}"
+    short_url = await shorten_url(long_url)
     await collection.insert_one({
         "link_id": link_id,
         "sudo_id": sudo_id,
@@ -44,23 +62,24 @@ async def create_link(sudo_id, channel_id, message_ids):
         "approved_users": [],
         "used_by": []
     })
-    return link
+    logger.info(f"Created link: {short_url} for link_id: {link_id}")
+    return short_url
 
 async def get_existing_links(sudo_id):
     """Fetch all links created by a sudo user."""
     links = []
     async for doc in collection.find({"sudo_id": sudo_id}):
-        links.append({"link_id": doc["link_id"], "link": f"https://t.me/{(await app.get_me()).username}?start={quote(doc['link_id'])}"})
+        link_url = f"https://t.me/{(await app.get_me()).username}?start={quote(doc['link_id'])}"
+        short_url = await shorten_url(link_url)
+        links.append({"link_id": doc["link_id"], "link": short_url})
     return links
 
 async def extract_chat_id_from_link(link):
     """Extract chat ID from a Telegram link (public or private)."""
-    # Match public channel: https://t.me/username
     public_match = re.match(r"https://t.me/(\w+)", link)
     if public_match:
         return public_match.group(1)
     
-    # Match private channel: https://t.me/c/123456789/...
     private_match = re.match(r"https://t.me/c/(\d+)", link)
     if private_match:
         return f"-100{private_match.group(1)}"
@@ -100,7 +119,7 @@ async def handle_channel_link(client, message):
     if sudo_id not in temp_data or temp_data[sudo_id]["state"] != "waiting_for_channel":
         return
     
-    channel_link = message.text.split()[0]  # Take the first link
+    channel_link = message.text.split()[0]
     chat_id = await extract_chat_id_from_link(channel_link)
     
     if not chat_id:
@@ -108,13 +127,12 @@ async def handle_channel_link(client, message):
         return
     
     try:
-        # Attempt to get chat details
         channel = await client.get_chat(chat_id)
         temp_data[sudo_id]["channel_id"] = channel.id
         temp_data[sudo_id]["state"] = "waiting_for_done"
         await message.reply(
             f"Channel recognized: {channel.title or channel.id}. "
-            "Please forward messages or use /done when ready."
+            "Please provide the message range (e.g., 2665-2666) or forward messages, then use /done."
         )
     except ChannelInvalid:
         logger.error(f"ChannelInvalid error for chat_id: {chat_id}")
@@ -150,6 +168,48 @@ async def handle_forwarded_messages(client, message):
     temp_data[sudo_id]["message_ids"].append(message_id)
     await message.reply("Message forwarded. Continue forwarding or use /done.")
 
+@app.on_message(filters.user(SUDO_USERS) & filters.text & filters.regex(r"\d+-\d+"))
+async def handle_message_range(client, message):
+    """Handle message range input (e.g., 2665-2666)."""
+    sudo_id = message.from_user.id
+    if sudo_id not in temp_data or temp_data[sudo_id]["state"] != "waiting_for_done":
+        return
+    
+    try:
+        start, end = map(int, message.text.split("-"))
+        if start > end or start < 1:
+            await message.reply("Invalid range. Ensure start is less than or equal to end and both are positive.")
+            return
+        
+        channel_id = temp_data[sudo_id]["channel_id"]
+        message_ids = []
+        
+        # Forward messages to sudo user's DM
+        for msg_id in range(start, end + 1):
+            try:
+                forwarded = await client.forward_messages(
+                    chat_id=sudo_id,
+                    from_chat_id=channel_id,
+                    message_ids=msg_id
+                )
+                message_ids.append(forwarded.id)
+                await asyncio.sleep(0.5)  # Flood control
+            except FloodWait as e:
+                logger.warning(f"FloodWait: Sleeping for {e.value} seconds")
+                await asyncio.sleep(e.value)
+            except Exception as e:
+                logger.error(f"Error forwarding message {msg_id}: {e}")
+                await message.reply(f"Error forwarding message {msg_id}. Skipping.")
+                continue
+        
+        temp_data[sudo_id]["message_ids"] = message_ids
+        await message.reply("Messages forwarded to your DM. Use /done to create the link.")
+    except ValueError:
+        await message.reply("Invalid range format. Please use start-end (e.g., 2665-2666).")
+    except Exception as e:
+        logger.error(f"Error processing message range: {e}")
+        await message.reply(f"An error occurred: {str(e)}.")
+
 @app.on_message(filters.command("done") & filters.user(SUDO_USERS))
 async def done_command(client, message):
     """Handle /done command to generate link."""
@@ -162,7 +222,7 @@ async def done_command(client, message):
     message_ids = temp_data[sudo_id].get("message_ids", [])
     
     if not message_ids:
-        await message.reply("No messages forwarded. Please forward messages or provide a channel link.")
+        await message.reply("No messages forwarded. Please forward messages or provide a message range.")
         return
     
     # Generate and store link
@@ -201,11 +261,16 @@ async def approve_link(client, callback_query):
         return
     
     link_id, user_id = callback_query.data.split("_")[1], int(callback_query.data.split("_")[2])
-    await collection.update_one(
+    result = await collection.update_one(
         {"link_id": link_id},
         {"$addToSet": {"approved_users": user_id}}
     )
-    await callback_query.message.reply(f"User {user_id} approved for link {link_id}.")
+    if result.modified_count > 0:
+        logger.info(f"Approved user {user_id} for link {link_id}")
+        await callback_query.message.reply(f"User {user_id} approved for link {link_id}.")
+    else:
+        logger.warning(f"Failed to approve user {user_id} for link {link_id}")
+        await callback_query.message.reply(f"Approval failed. User may already be approved or link not found.")
     await callback_query.answer()
 
 @app.on_message(filters.command("start") & filters.regex(r"start (.+)"))
@@ -216,22 +281,29 @@ async def start_command(client, message):
     
     link_doc = await collection.find_one({"link_id": link_id})
     if not link_doc:
+        logger.warning(f"Invalid link_id: {link_id}")
         await message.reply("Invalid or expired link.")
         return
     
     if user_id not in link_doc["approved_users"]:
+        logger.info(f"User {user_id} not approved for link {link_id}")
         await message.reply("You are not approved to access this content.")
         return
     
     if user_id in link_doc["used_by"]:
+        logger.info(f"User {user_id} already used link {link_id}")
         await message.reply("Approval rejected: You have already used this link.")
         return
     
     # Mark link as used
-    await collection.update_one(
+    result = await collection.update_one(
         {"link_id": link_id},
         {"$addToSet": {"used_by": user_id}}
     )
+    if result.modified_count == 0:
+        logger.warning(f"Failed to mark link {link_id} as used for user {user_id}")
+        await message.reply("Error processing request. Please try again.")
+        return
     
     # Forward messages with flood control
     for msg_id in link_doc["message_ids"]:
@@ -242,11 +314,15 @@ async def start_command(client, message):
                 message_ids=msg_id
             )
             await asyncio.sleep(0.5)  # Flood control
+        except FloodWait as e:
+            logger.warning(f"FloodWait: Sleeping for {e.value} seconds")
+            await asyncio.sleep(e.value)
         except Exception as e:
-            logger.error(f"Error forwarding message: {e}")
+            logger.error(f"Error forwarding message {msg_id}: {e}")
             await message.reply("Error forwarding some messages.")
             break
     
+    logger.info(f"Content forwarded to user {user_id} for link {link_id}")
     await message.reply("All content forwarded successfully.")
 
 # Run the bot
