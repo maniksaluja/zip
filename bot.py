@@ -117,7 +117,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     # Replace with your bot token from BotFather
-    BOT_TOKEN = "7883007323:AAEziN0KMaC78dfmIlYGfHEzITnYdEsEsTg"  # Add your bot token here
+    BOT_TOKEN = "7739730998:AAEB8i_2hItBOj9gNYs9bDgAsrDWACAUE7k"  # Add your bot token here
 
     # Initialize storage
     init_storage()
