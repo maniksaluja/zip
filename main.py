@@ -240,17 +240,39 @@ async def process_archive_file(message: Message, status_message: Message):
                                 progress_args=(status_message, TEXT),
                                 reply_to_message_id=message.id
                             )
-                         else 
-                            for channel_id in [config['channel_1'], config['channel_2']]:
-                                if send_method == 'photo':
-                                   await retry_with_flood_wait(
-                                      app.send_photo,
-                                      chat_id=int(channel_id),
-                                      photo=file_path,
-                                      caption=file_name,
-                                      progress=upload_progress_callback,
-                                      progress_args=(status_message, TEXT),
-                                      reply_to_message_id=message.id
+                    else:
+                        for channel_id in [config['channel_1'], config['channel_2']]:
+                            if send_method == 'photo':
+                                await retry_with_flood_wait(
+                                    app.send_photo,
+                                    chat_id=int(channel_id),
+                                    photo=file_path,
+                                    caption=file_name,
+                                    progress=upload_progress_callback,
+                                    progress_args=(status_message, TEXT),
+                                    reply_to_message_id=message.id
+                            )
+                        else:
+                            await retry_with_flood_wait(
+                                app.send_document,
+                                chat_id=int(config['channel_1']),
+                                document=file_path,
+                                caption=file_name,
+                                progress=upload_progress_callback,
+                                progress_args=(status_message, TEXT),
+                                reply_to_message_id=message.id
+                            )
+                    else:
+                        for channel_id in [config['channel_1'], config['channel_2']]:
+                            if send_method == 'photo':
+                                await retry_with_flood_wait(
+                                    app.send_photo,
+                                    chat_id=int(channel_id),
+                                    photo=file_path,
+                                    caption=file_name,
+                                    progress=upload_progress_callback,
+                                    progress_args=(status_message, TEXT),
+                                    reply_to_message_id=message.id
                                 )
                             elif send_method == 'video':
                                 await retry_with_flood_wait(
