@@ -9,6 +9,7 @@ from collections import defaultdict
 import logging
 import shutil
 
+# Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -19,14 +20,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Queue management
 user_queues = defaultdict(asyncio.Queue)
 user_tasks = {}
 
+# Progress tracking
 download_progress = {}
 upload_progress = {}
 
+# Supported archive formats
 SUPPORTED_EXTENSIONS = {'.zip', '.rar', '.7z'}
-MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024
+MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024  # 2GB
 
 async def process_user_queue(user_id: int):
     queue = user_queues[user_id]
@@ -251,28 +255,6 @@ async def process_archive_file(message: Message, status_message: Message):
                                     progress=upload_progress_callback,
                                     progress_args=(status_message, TEXT),
                                     reply_to_message_id=message.id
-                            )
-                        else:
-                            await retry_with_flood_wait(
-                                app.send_document,
-                                chat_id=int(config['channel_1']),
-                                document=file_path,
-                                caption=file_name,
-                                progress=upload_progress_callback,
-                                progress_args=(status_message, TEXT),
-                                reply_to_message_id=message.id
-                            )
-                    else:
-                        for channel_id in [config['channel_1'], config['channel_2']]:
-                            if send_method == 'photo':
-                                await retry_with_flood_wait(
-                                    app.send_photo,
-                                    chat_id=int(channel_id),
-                                    photo=file_path,
-                                    caption=file_name,
-                                    progress=upload_progress_callback,
-                                    progress_args=(status_message, TEXT),
-                                    reply_to_message_id=message.id
                                 )
                             elif send_method == 'video':
                                 await retry_with_flood_wait(
@@ -345,6 +327,7 @@ async def process_archive_file(message: Message, status_message: Message):
         except Exception as e:
             logger.error(f"Error during final cleanup: {str(e)}")
 
+# Config storage
 CONFIG_FILE = 'config.json'
 default_config = {
     'channel_1': '',
