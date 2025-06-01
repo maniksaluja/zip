@@ -1,0 +1,6 @@
+pyrofork
+python-telegram-bot>=20.0
+psutil
+py7zr
+rarfile
+tgcrypto
