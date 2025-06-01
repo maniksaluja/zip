@@ -21,9 +21,9 @@ import rarfile
 
 ## --- ADD YOUR API ID, API HASH, and BOT TOKEN BELOW ---
 # You can get these from https://my.telegram.org
-API_ID=xxxxx
-API_HASH="xxxxxxxxxxxxxxxxxxxxxxxxxxx"
-BOT_TOKEN = "8079860149:AAGYZwgUPOmS7pManw-H5rfTpcAne0-nwck"
+API_ID= 21154846
+API_HASH="ef320a14f6312ba733d1812e7129cbd8"
+BOT_TOKEN = "8079860149:AAG7ffR2jSg1MlXN05ddVPRIM1VKBhU59Nk"
 # --- END OF CONFIGURATION ---
 DATA_DIR = Path("data")
 USAGE_FILE = Path("usage.json")
